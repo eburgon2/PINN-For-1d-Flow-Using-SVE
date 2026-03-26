@@ -61,7 +61,7 @@ def get_width():
     width = pd.merge(B_u,B_d,how='outer',on='Date')
     width = width.sort_index()
     width.to_csv('../Data Files/Raw/By Parameter/Width.csv')
-    return width
+    return B_u,B_d
 
 def get_depth():
     h_u = pd.read_csv("../Data Files/Raw/up_height_raw.csv")
@@ -84,27 +84,47 @@ def get_depth():
     depth.to_csv('../Data Files/Raw/By Parameter/depth_to_datum.csv')
     return h_u, h_d
 
-def to_datum(discharge):
-    up_depth, down_depth = get_depth()
+def log_transform(discharge, parameter):
+    if(parameter == "depth"):
+        up_depth, down_depth = get_depth()
 
-    up_datum = pd.merge(discharge,up_depth,how='outer',on='Date')
-    up_datum = up_datum.drop(columns=["Downstream Mean Discharge (cfs)"],axis=1)
-    up_datum = up_datum.resample('D').mean()
-    up_datum = up_datum.dropna(subset="Upstream Mean Discharge (cfs)")
+        up_datum = pd.merge(discharge,up_depth,how='outer',on='Date')
+        up_datum = up_datum.drop(columns=["Downstream Mean Discharge (cfs)"],axis=1)
+        up_datum = up_datum.resample('D').mean()
+        up = up_datum.dropna(subset=["Upstream Mean Discharge (cfs)"]).copy()
+        
+        down_datum = pd.merge(discharge,down_depth,how='outer',on='Date')
+        down_datum = down_datum.drop(columns=["Upstream Mean Discharge (cfs)"],axis=1)
+        down_datum = down_datum.resample('D').mean()
+        down = down_datum.dropna(subset=["Downstream Mean Discharge (cfs)"]).copy()
+
+        variable = 'Datum'
+
+    elif(parameter == "width"):
+        up_width, down_depth = get_width()
+
+        up_datum = pd.merge(discharge,up_width,how='outer',on='Date')
+        up_datum = up_datum.drop(columns=["Downstream Mean Discharge (cfs)"],axis=1)
+        up_datum = up_datum.resample('D').mean()
+        up = up_datum.dropna(subset=["Upstream Mean Discharge (cfs)"]).copy()
+        
+        down_datum = pd.merge(discharge,down_depth,how='outer',on='Date')
+        down_datum = down_datum.drop(columns=["Upstream Mean Discharge (cfs)"],axis=1)
+        down_datum = down_datum.resample('D').mean()
+        down = down_datum.dropna(subset=["Downstream Mean Discharge (cfs)"]).copy()
+        
+        variable = 'Width'
+
     
-    down_datum = pd.merge(discharge,down_depth,how='outer',on='Date')
-    down_datum = down_datum.drop(columns=["Upstream Mean Discharge (cfs)"],axis=1)
-    down_datum = down_datum.resample('D').mean()
-    down_datum = down_datum.dropna(subset="Downstream Mean Discharge (cfs)")
 
     eps = 1e-6
 
-    def set_data(location,datum):
-        training = datum[f"{location} Datum (ft)"].notna()
+    def set_data(location,variable, datum):
+        training = datum[f"{location} {variable} (ft)"].notna()
 
         flow_train = datum.loc[training, f"{location} Mean Discharge (cfs)"].values
-        gauge_train = datum.loc[training, f"{location} Datum (ft)"].values
-        nan_set = datum[f"{location} Datum (ft)"].isna()
+        gauge_train = datum.loc[training, f"{location} {variable} (ft)"].values
+        nan_set = datum[f"{location} {variable} (ft)"].isna()
         flow_test = datum.loc[nan_set, f"{location} Mean Discharge (cfs)"].values
         
         eps = 1e-6
@@ -120,7 +140,7 @@ def to_datum(discharge):
         return flow_sort, gauge_sort, flow_test, nan_set
     
 
-    def log_transform(flow_sort, gauge_sort, flow_test):    
+    def regression(flow_sort, gauge_sort, flow_test):    
         regr = LinearRegression()
         regr.fit(flow_sort, gauge_sort)
         
@@ -131,14 +151,14 @@ def to_datum(discharge):
         gauge_predict = np.exp(gauge_predict)-eps
         return mse, gauge_predict
 
-    up_flow_sort, up_gauge_sort, up_flow_test, nanu_set = set_data('Upstream',up_datum)
-    up_MSE, up_gauge_predict = log_transform (up_flow_sort, up_gauge_sort, up_flow_test)
-    up_datum.loc[nanu_set, "Upstream Datum (ft)"] = up_gauge_predict
+    up_flow_sort, up_gauge_sort, up_flow_test, nanu_set = set_data('Upstream',variable,up)
+    up_MSE, up_gauge_predict = regression(up_flow_sort, up_gauge_sort, up_flow_test)
+    up.loc[nanu_set, f"Upstream {variable} (ft)"] = up_gauge_predict
 
-    down_flow_sort, down_gauge_sort, down_flow_test, nand_set = set_data('Downstream',down_datum)
-    down_MSE, down_gauge_predict = log_transform (down_flow_sort, down_gauge_sort, down_flow_test)
-    down_datum.loc[nand_set, "Downstream Datum (ft)"] = down_gauge_predict
+    down_flow_sort, down_gauge_sort, down_flow_test, nand_set = set_data('Downstream',variable,down)
+    down_MSE, down_gauge_predict = regression(down_flow_sort, down_gauge_sort, down_flow_test)
+    down.loc[nand_set, f"Downstream {variable} (ft)"] = down_gauge_predict
 
-    datum = pd.merge(up_datum,down_datum,how='outer',on='Date')
+    data = pd.merge(up,down,how='outer',on='Date')
 
-    return datum, up_MSE, down_MSE
+    return data, up_MSE, down_MSE
