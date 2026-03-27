@@ -161,3 +161,37 @@ def log_transform(discharge, parameter):
     data = pd.merge(up,down,how='outer',on='Date')
 
     return data, up_MSE, down_MSE
+
+def usgs_surface(id,year1,year2):
+    d, m = waterdata.get_continuous(monitoring_location_id= f"USGS-{id}",
+                parameter_code='00065',
+                time=f"{year1}-01-01/{year2}-12-31",
+                properties=["time","value"])
+    d.set_index("time",inplace=True)
+    d.index = d.index.date
+    d.index = pd.to_datetime(d.index)
+    d.index.name = "Date"
+    d = d.resample('D').first()
+
+    return d
+        
+
+def get_surface(upid, downid, coupled_years):
+    up_data = []
+    down_data = []
+
+    for i in coupled_years:
+        up_data.append(usgs_surface(upid,i[0],i[1]))
+        down_data.append(usgs_surface(downid,i[0],i[1]))
+    
+    up_total = pd.concat(up_data,axis=0,join='outer',ignore_index=False)
+    up_total = up_total.rename(columns = {"value":"Upstream Depth (ft)"})
+    down_total = pd.concat(down_data,axis=0,join='outer',ignore_index=False)
+    down_total = down_total.rename(columns = {"value":"Downstream Depth (ft)"})
+    surface = pd.merge(up_total,down_total,how='outer',on="Date")
+
+    surface.to_csv('../Data Files/Raw/By Parameter/depth_to_surface.csv')
+
+    return surface
+        
+
