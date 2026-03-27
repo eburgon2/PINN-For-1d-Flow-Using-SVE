@@ -115,7 +115,6 @@ def log_transform(discharge, parameter):
         
         variable = 'Width'
 
-    
 
     eps = 1e-6
 
