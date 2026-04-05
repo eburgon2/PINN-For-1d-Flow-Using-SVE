@@ -4,6 +4,7 @@ import sys
 import pandas as pd
 import datetime as dt
 from dataretrieval import nwis
+from dataretrieval import waterdata
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
@@ -40,49 +41,91 @@ def get_discharge(up_ID, down_ID,start,end):
     discharge = pd.merge(Q_u,Q_d,how='inner',on='Date')
     discharge = discharge.sort_index()
 
-    discharge.to_csv('../Data Files/Raw/By Parameter/Discharge.csv')
+    discharge.to_csv('../Data Files/Raw/Discharge.csv')
     return discharge
 
-def get_width():
-    B_u = pd.read_csv("../Data Files/Raw/up_width_raw.csv")
-    B_u = B_u.drop(columns=["Activity_DepthHeightMeasure","Activity_DepthHeightMeasureUnit","Result_MeasureUnit"],axis=1)
-    B_u = B_u.rename(columns={'Activity_StartDate':'Date','Result_Measure':'Upstream Width (ft)'})
-    B_u["Date"] = pd.to_datetime(B_u["Date"])
-    B_u.set_index("Date",inplace=True)
-    B_u = B_u.sort_index()
+def get_width(up_ID, down_ID,start,end):
+    W_u = pd.DataFrame()
+    w, metadata = waterdata.get_samples(
+                monitoringLocationIdentifier=[f"USGS-{up_ID}"],
+                activityStartDateLower= start, activityStartDateUpper= end,
+                service='results',
+                #characteristic='Width of stream',
+                usgsPCode='00004'
+            )
+    W_u['Date']= w['Activity_StartDate']
+    W_u["Upstream Width (ft)"] = w['Result_Measure']
 
-    B_d = pd.read_csv("../Data Files/Raw/down_width_raw.csv")
-    B_d = B_d.drop(columns=["Activity_DepthHeightMeasure","Activity_DepthHeightMeasureUnit","Result_MeasureUnit"],axis=1)
-    B_d = B_d.rename(columns={'Activity_StartDate':'Date','Result_Measure':'Downstream Width (ft)'})
-    B_d["Date"] = pd.to_datetime(B_d["Date"])
-    B_d.set_index("Date",inplace=True)
-    B_d = B_d.sort_index()
+    W_d = pd.DataFrame()
+    w, metadata = waterdata.get_samples(
+                monitoringLocationIdentifier=[f"USGS-{down_ID}"],
+                activityStartDateLower= start, activityStartDateUpper= end,
+                service='results',
+                #characteristic='Width of stream',
+                usgsPCode='00004'
+            )
+    W_d['Date']= w['Activity_StartDate']
+    W_d["Downstream Width (ft)"] = w['Result_Measure']
 
-    width = pd.merge(B_u,B_d,how='outer',on='Date')
-    width = width.sort_index()
-    width.to_csv('../Data Files/Raw/By Parameter/Width.csv')
-    return B_u,B_d
+    width = pd.merge(W_d,W_u, how='outer', on='Date')
+    width['Date'] = pd.to_datetime(width['Date'])
+    width.set_index('Date',inplace=True)
 
-def get_depth():
-    h_u = pd.read_csv("../Data Files/Raw/up_height_raw.csv")
-    h_u = h_u.drop(columns=["Activity_DepthHeightMeasure","Activity_DepthHeightMeasureUnit","Result_MeasureUnit"],axis=1)
-    h_u = h_u.rename(columns={'Activity_StartDate':'Date','Result_Measure': 'Upstream Datum (ft)'})
-    h_u["Date"] = pd.to_datetime(h_u["Date"])
-    h_u.set_index("Date",inplace=True)
-    h_u = h_u.sort_index()
+    width.to_csv('../Data Files/Raw/Width.csv')
+    return width
 
-    h_d = pd.read_csv("../Data Files/Raw/down_height_raw.csv")
-    h_d = h_d.drop(columns=["Activity_DepthHeightMeasure","Activity_DepthHeightMeasureUnit","Result_MeasureUnit"],axis=1)
-    h_d = h_d.rename(columns={'Activity_StartDate':'Date','Result_Measure': 'Downstream Datum (ft)'})
-    h_d["Date"] = pd.to_datetime(h_d["Date"])
-    h_d.set_index("Date",inplace=True)
-    h_d = h_d.sort_index()
+def get_depth_2_datum(up_ID, down_ID,start,end):
+    #Upstream 
+    g2d_meters, metadata = waterdata.get_samples(
+                monitoringLocationIdentifier=[f"USGS-{up_ID}"],
+                activityStartDateLower= start, activityStartDateUpper= end,
+                service='results',
+                usgsPCode='30207'
+            )
+    g2d_feet,metadata = waterdata.get_samples(
+                monitoringLocationIdentifier=[f"USGS-{up_ID}"],
+                activityStartDateLower= start, activityStartDateUpper= end,
+                service='results',
+                usgsPCode='00065'
+            )
 
-    depth = pd.merge(h_u,h_d,how='outer',on='Date')
-    depth = depth.sort_index()
-    depth = depth.resample('D').mean()
-    depth.to_csv('../Data Files/Raw/By Parameter/depth_to_datum.csv')
-    return h_u, h_d
+    g2d_meters['Result_Measure'] = g2d_meters['Result_Measure'] * 3.28 #converting to ft for the merging
+    g2d_up = pd.concat([g2d_feet[['Activity_StartDate','Result_Measure']],
+                    g2d_meters[['Activity_StartDate','Result_Measure']]],ignore_index=True)
+    g2d_up = g2d_up.rename(columns={'Activity_StartDate':'Date','Result_Measure':'Upstream to Datum (ft)'})
+    g2d_up['Date'] = pd.to_datetime(g2d_up['Date'])
+    g2d_up.set_index('Date',inplace=True)
+    g2d_up = g2d_up.groupby('Date', as_index=True).mean()
+    g2d_up = g2d_up.sort_index()
+
+    #Downstream
+    g2d_meters, metadata = waterdata.get_samples(
+                monitoringLocationIdentifier=[f"USGS-{down_ID}"],
+                activityStartDateLower= start, activityStartDateUpper= end,
+                service='results',
+                usgsPCode='30207'
+            )
+    g2d_feet,metadata = waterdata.get_samples(
+                monitoringLocationIdentifier=[f"USGS-{down_ID}"],
+                activityStartDateLower= start, activityStartDateUpper= end,
+                service='results',
+                usgsPCode='00065'
+            )
+
+    g2d_meters['Result_Measure'] = g2d_meters['Result_Measure'] * 3.28 #converting to ft for the merging
+    
+    g2d_down = pd.concat([g2d_feet[['Activity_StartDate','Result_Measure']],
+                    g2d_meters[['Activity_StartDate','Result_Measure']]],ignore_index=True)
+    g2d_down = g2d_down.rename(columns={'Activity_StartDate':'Date','Result_Measure':'Downstream to Datum (ft)'})
+    g2d_down['Date'] = pd.to_datetime(g2d_down['Date'])
+    g2d_down.set_index('Date',inplace=True)
+    g2d_down = g2d_down.groupby('Date', as_index=True).mean()
+    g2d_down = g2d_down.sort_index()
+    g2d = pd.merge(g2d_up,g2d_down,left_index=True, right_index=True,how='outer')
+    
+    g2d.to_csv('../Data Files/Raw/Depth_to_Datum.csv')
+    
+    return g2d
 
 def log_transform(discharge, parameter):
     if(parameter == "depth"):
@@ -185,13 +228,12 @@ def get_surface(upid, downid, coupled_years):
         down_data.append(usgs_surface(downid,i[0],i[1]))
     
     up_total = pd.concat(up_data,axis=0,join='outer',ignore_index=False)
-    up_total = up_total.rename(columns = {"value":"Upstream Depth (ft)"})
+    up_total = up_total.rename(columns = {"value":"Upstream Gauge Depth (ft)"})
     down_total = pd.concat(down_data,axis=0,join='outer',ignore_index=False)
-    down_total = down_total.rename(columns = {"value":"Downstream Depth (ft)"})
+    down_total = down_total.rename(columns = {"value":"Downstream Gauge Depth (ft)"})
     surface = pd.merge(up_total,down_total,how='outer',on="Date")
 
-    surface.to_csv('../Data Files/Raw/By Parameter/depth_to_surface.csv')
-
+    surface.to_csv('../Data Files/Raw/Gauge_Depth.csv')
     return surface
         
 
