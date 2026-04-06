@@ -54,6 +54,7 @@ def get_width(up_ID, down_ID,start,end):
                 usgsPCode='00004'
             )
     W_u['Date']= w['Activity_StartDate']
+    W_u['Upstream Time']= w['Activity_StartTime']
     W_u["Upstream Width (ft)"] = w['Result_Measure']
 
     W_d = pd.DataFrame()
@@ -65,6 +66,7 @@ def get_width(up_ID, down_ID,start,end):
                 usgsPCode='00004'
             )
     W_d['Date']= w['Activity_StartDate']
+    W_d['Downstream Time']= w['Activity_StartTime']
     W_d["Downstream Width (ft)"] = w['Result_Measure']
 
     width = pd.merge(W_d,W_u, how='outer', on='Date')
@@ -90,12 +92,12 @@ def get_depth_2_datum(up_ID, down_ID,start,end):
             )
 
     g2d_meters['Result_Measure'] = g2d_meters['Result_Measure'] * 3.28 #converting to ft for the merging
-    g2d_up = pd.concat([g2d_feet[['Activity_StartDate','Result_Measure']],
-                    g2d_meters[['Activity_StartDate','Result_Measure']]],ignore_index=True)
-    g2d_up = g2d_up.rename(columns={'Activity_StartDate':'Date','Result_Measure':'Upstream to Datum (ft)'})
+    g2d_up = pd.concat([g2d_feet[['Activity_StartDate','Activity_StartTime','Result_Measure']],
+                    g2d_meters[['Activity_StartDate','Activity_StartTime','Result_Measure']]],ignore_index=True)
+    g2d_up = g2d_up.rename(columns={'Activity_StartDate':'Date','Result_Measure':'Upstream to Datum (ft)','Activity_StartTime':'Upstream Time'})
+    g2d_up = g2d_up.groupby(['Date','Upstream Time'],as_index=False)['Upstream to Datum (ft)'].mean()
     g2d_up['Date'] = pd.to_datetime(g2d_up['Date'])
     g2d_up.set_index('Date',inplace=True)
-    g2d_up = g2d_up.groupby('Date', as_index=True).mean()
     g2d_up = g2d_up.sort_index()
 
     #Downstream
@@ -114,13 +116,14 @@ def get_depth_2_datum(up_ID, down_ID,start,end):
 
     g2d_meters['Result_Measure'] = g2d_meters['Result_Measure'] * 3.28 #converting to ft for the merging
     
-    g2d_down = pd.concat([g2d_feet[['Activity_StartDate','Result_Measure']],
-                    g2d_meters[['Activity_StartDate','Result_Measure']]],ignore_index=True)
-    g2d_down = g2d_down.rename(columns={'Activity_StartDate':'Date','Result_Measure':'Downstream to Datum (ft)'})
+    g2d_down = pd.concat([g2d_feet[['Activity_StartDate','Activity_StartTime','Result_Measure']],
+                    g2d_meters[['Activity_StartDate','Activity_StartTime','Result_Measure']]],ignore_index=True)
+    g2d_down = g2d_down.rename(columns={'Activity_StartDate':'Date','Result_Measure':'Downstream to Datum (ft)','Activity_StartTime':'Downstream Time'})
+    g2d_down = g2d_down.groupby(['Date','Downstream Time'],as_index=False)['Downstream to Datum (ft)'].mean()
     g2d_down['Date'] = pd.to_datetime(g2d_down['Date'])
     g2d_down.set_index('Date',inplace=True)
-    g2d_down = g2d_down.groupby('Date', as_index=True).mean()
     g2d_down = g2d_down.sort_index()
+
     g2d = pd.merge(g2d_up,g2d_down,left_index=True, right_index=True,how='outer')
     
     g2d.to_csv('../Data Files/Raw/Depth_to_Datum.csv')
