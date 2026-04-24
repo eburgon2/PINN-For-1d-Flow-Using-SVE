@@ -1,8 +1,8 @@
 name: pinn
 channels:
   - conda-forge
+  - pytorch
 dependencies:
-  - contextily
   - dataretrieval
   - geopandas
   - ipykernel
@@ -13,6 +13,7 @@ dependencies:
   - pynldas2
   - python=3.10
   - pydaymet[version='>=0.13.7']
+  - pandas
   - earthaccess
   - iprogress
   - ca-certificates
@@ -23,3 +24,7 @@ dependencies:
   - earthengine-api
   - geemap
   - xarray-spatial
+  - conda
+  - matplotlib
+  - numpy
+  - scikit-learn
